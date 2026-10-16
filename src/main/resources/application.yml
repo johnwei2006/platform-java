@@ -1,0 +1,36 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: platform-java
+  data:
+    mongodb:
+      uri: ${MONGO_URI:mongodb://localhost:27017/iot_platform}
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    listener:
+      simple:
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 1000
+          multiplier: 2.0
+          max-interval: 10000
+        default-requeue-rejected: false
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:iot-platform-secret-change-me}
+    expire-ms: 86400000
+  mq:
+    exchange: iot.exchange
+    platform-uplink: platform.uplink
+    platform-downlink: platform.downlink
+
+logging:
+  level:
+    com.iot.platform: info
