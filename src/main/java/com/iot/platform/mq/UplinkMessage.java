@@ -12,7 +12,7 @@ public class UplinkMessage {
     private int serviceVersion;
     private int serviceDataProtocolVersion;
     private int serviceDataEncoding;
-    private int serviceDataEncryption;
+    private int serviceEncryption;
     private long eventId;
     /** 业务数据：原始字节的 base64 字符串 */
     private String serviceData;
@@ -66,12 +66,12 @@ public class UplinkMessage {
         this.serviceDataEncoding = serviceDataEncoding;
     }
 
-    public int getServiceDataEncryption() {
-        return serviceDataEncryption;
+    public int getServiceEncryption() {
+        return serviceEncryption;
     }
 
-    public void setServiceDataEncryption(int serviceDataEncryption) {
-        this.serviceDataEncryption = serviceDataEncryption;
+    public void setServiceEncryption(int serviceEncryption) {
+        this.serviceEncryption = serviceEncryption;
     }
 
     public long getEventId() {
