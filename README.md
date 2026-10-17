@@ -47,5 +47,5 @@ mvn spring-boot:run
 
 ## 与网关/传输的契约
 
-- 上行：设备 → ProxyTcp → `proxy.uplink` → dtm → `platform.uplink`（JSON：`UplinkMessage`）。
+- 上行：设备 → ProxyTcp → `proxy.uplink` → dtm → `platform.uplink`（JSON：`UplinkMessage`，即网关 `ServiceRequest` 信封，字段对齐：deviceId/nodeId/serviceType/serviceVersion/serviceDataProtocolVersion/serviceDataEncoding/serviceData(原始字节 base64)/serviceEncryption）。
 - 下行：后台 → `platform.downlink` → dtm → `proxy.downlink` → ProxyTcp（JSON：`DownlinkMessage`，对齐网关 `ServiceRequest`）。
