@@ -1,9 +1,15 @@
 package com.iot.platform.mq;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.databind.JsonNode;
+
 /**
- * 下行消息 DTO：平台发布到 platform.downlink，经 dtm 透传至网关（ProxyTcp）。
- * 字段对齐 ProxyTcp 的 ServiceRequest，便于网关直接消费。
+ * 下行消息 DTO：平台发布到 platform.downlink，经 dtm 编码后送网关（ProxyTcp）。
+ * 既支持旧的 base64 serviceData，也支持结构化 serviceDataDecoded（由 dtm 编码为二进制）。
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class DownlinkMessage {
 
     private String deviceId;
@@ -16,6 +22,8 @@ public class DownlinkMessage {
     private int serviceDataProtocolVersion;
     private int serviceEncryption;
     private long eventId;
+    /** 结构化业务字段；存在时 dtm 会优先用它编码二进制 serviceData */
+    private JsonNode serviceDataDecoded;
 
     public String getDeviceId() {
         return deviceId;
@@ -87,5 +95,13 @@ public class DownlinkMessage {
 
     public void setEventId(long eventId) {
         this.eventId = eventId;
+    }
+
+    public JsonNode getServiceDataDecoded() {
+        return serviceDataDecoded;
+    }
+
+    public void setServiceDataDecoded(JsonNode serviceDataDecoded) {
+        this.serviceDataDecoded = serviceDataDecoded;
     }
 }

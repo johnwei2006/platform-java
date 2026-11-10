@@ -16,6 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.Date;
+import java.util.Map;
 
 /**
  * 上行数据接入：消费 platform.uplink，持久化数据、更新设备在线状态，
@@ -47,6 +48,11 @@ public class DataIngestionService {
             rec.setServiceData(up.getServiceData());
             rec.setEventId(up.getEventId());
             rec.setCreatedAt(new Date());
+            rec.setServiceDataDecoded(toMap(up.getServiceDataDecoded()));
+            rec.setProtocolName(up.getProtocolName());
+            rec.setTransactionType(up.getTransactionType());
+            rec.setDecodeStatus(up.getDecodeStatus());
+            rec.setDecodeError(up.getDecodeError());
             dataRecordRepository.save(rec);
 
             Device d = deviceRepository.findByDeviceId(up.getDeviceId()).orElseGet(() -> {
@@ -72,10 +78,22 @@ public class DataIngestionService {
                 alarmRepository.save(a);
             }
 
-            log.info("ingested uplink from {} serviceType={}", up.getDeviceId(), up.getServiceType());
+            log.info("ingested uplink from {} serviceType={} protocol={} decodeStatus={} transactionType={}",
+                    up.getDeviceId(), up.getServiceType(),
+                    up.getProtocolName() == null ? "-" : up.getProtocolName(),
+                    up.getDecodeStatus() == null ? "-" : up.getDecodeStatus(),
+                    up.getTransactionType() == null ? "-" : up.getTransactionType());
         } catch (Exception e) {
             log.error("failed to ingest uplink", e);
             throw new RuntimeException(e); // 触发重试 / 死信
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> toMap(com.fasterxml.jackson.databind.JsonNode node) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        return objectMapper.convertValue(node, Map.class);
     }
 }

@@ -1,6 +1,7 @@
 package com.iot.platform.mq;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 
 import org.junit.Test;
 
@@ -9,16 +10,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * 上行契约测试：验证 ProxyTcp 用 Gson 序列化的 ServiceRequest JSON，能被 platform_java 的
- * UplinkMessage（Jackson）正确反序列化。模拟生产环境 Spring Boot 的 ObjectMapper 配置
- * （关闭 FAIL_ON_UNKNOWN_PROPERTIES），与 DataIngestionService 实际行为一致。
- *
- * <p>该测试是「ProxyTcp → dtm(透传) → platform_java」上行端到端打通的关键证据：
- * 只要 JSON key 与字段对齐（尤其是 serviceEncryption），网关上行即可被后台正确消费。
+ * UplinkMessage（Jackson）正确反序列化；以及 dtm 追加结构化字段后仍可消费。
+ * 模拟生产环境 Spring Boot 的 ObjectMapper 配置（关闭 FAIL_ON_UNKNOWN_PROPERTIES）。
  */
 public class UplinkMessageContractTest {
 
-    // 与 ProxyTcp ServiceRequest（Gson）输出一致的 JSON：
-    // serviceData 为原始字节的 base64（"QUJD" = "ABC"）；serviceEncryption 为对齐后的 key。
     private static final String SERVICEREQUEST_JSON = "{"
             + "\"deviceId\":\"30410007102\","
             + "\"nodeId\":null,"
@@ -32,17 +28,58 @@ public class UplinkMessageContractTest {
             + "\"serviceData\":\"QUJD\""
             + "}";
 
-    @Test
-    public void gsonServiceRequestJsonParsesIntoUplinkMessage() throws Exception {
+    private static final String DTM_ENRICHED_JSON = "{"
+            + "\"deviceId\":\"30410007102\","
+            + "\"nodeId\":\"\","
+            + "\"eventId\":2774,"
+            + "\"serviceType\":101,"
+            + "\"serviceVersion\":1,"
+            + "\"serviceDataEncoding\":2,"
+            + "\"serviceDataProtocolVersion\":1,"
+            + "\"serviceEncryption\":0,"
+            + "\"serviceData\":\"AQI=\","
+            + "\"serviceDataDecoded\":{\"appType\":1,\"action\":2},"
+            + "\"protocolName\":\"GATEWAY_REBOOT\","
+            + "\"transactionType\":\"downlink\","
+            + "\"decodeStatus\":\"OK\","
+            + "\"futureField\":\"ignored\""
+            + "}";
+
+    private ObjectMapper mapper() {
         ObjectMapper mapper = new ObjectMapper();
         mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        return mapper;
+    }
 
-        UplinkMessage up = mapper.readValue(SERVICEREQUEST_JSON, UplinkMessage.class);
+    @Test
+    public void gsonServiceRequestJsonParsesIntoUplinkMessage() throws Exception {
+        UplinkMessage up = mapper().readValue(SERVICEREQUEST_JSON, UplinkMessage.class);
 
         assertEquals("deviceId 应正确映射", "30410007102", up.getDeviceId());
         assertEquals("serviceType 应正确映射", 2, up.getServiceType());
         assertEquals("serviceData(base64) 应原样透传", "QUJD", up.getServiceData());
-        // 关键：serviceEncryption key 现在能被 UplinkMessage 识别（改名前会被 Jackson 忽略丢弃）
         assertEquals("serviceEncryption 应正确映射（对齐 ServiceRequest）", 1, up.getServiceEncryption());
+        assertNull("旧版透传报文没有结构化字段", up.getServiceDataDecoded());
+    }
+
+    @Test
+    public void dtmStructuredFieldsAreConsumed() throws Exception {
+        UplinkMessage up = mapper().readValue(DTM_ENRICHED_JSON, UplinkMessage.class);
+
+        assertEquals(101, up.getServiceType());
+        assertEquals("AQI=", up.getServiceData());
+        assertEquals("GATEWAY_REBOOT", up.getProtocolName());
+        assertEquals("downlink", up.getTransactionType());
+        assertEquals("OK", up.getDecodeStatus());
+        assertEquals(1, up.getServiceDataDecoded().path("appType").asInt());
+        assertEquals(2, up.getServiceDataDecoded().path("action").asInt());
+    }
+
+    @Test
+    public void unknownEnvelopeFieldsAreIgnoredEvenWithStrictMapper() throws Exception {
+        ObjectMapper strict = new ObjectMapper();
+        strict.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, true);
+        UplinkMessage up = strict.readValue(DTM_ENRICHED_JSON, UplinkMessage.class);
+        assertEquals("OK", up.getDecodeStatus());
     }
 }

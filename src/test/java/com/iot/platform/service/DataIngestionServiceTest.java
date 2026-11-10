@@ -18,6 +18,7 @@ import org.mockito.junit.MockitoJUnitRunner;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageProperties;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 
 import static org.junit.Assert.assertEquals;
@@ -84,6 +85,31 @@ public class DataIngestionServiceTest {
 
         verify(alarmRepository).save(ArgumentMatchers.argThat(
                 a -> "D2".equals(a.getDeviceId()) && "ERROR".equals(a.getLevel()) && "OPEN".equals(a.getStatus())));
+    }
+
+    @Test
+    public void persistsDtmDecodedStructuredFields() {
+        String json = "{\"deviceId\":\"D3\",\"serviceType\":101,\"serviceVersion\":1,"
+                + "\"serviceData\":\"AQI=\",\"eventId\":300,"
+                + "\"serviceDataDecoded\":{\"appType\":1,\"action\":2},"
+                + "\"protocolName\":\"GATEWAY_REBOOT\",\"transactionType\":\"downlink\","
+                + "\"decodeStatus\":\"OK\"}";
+        Message msg = new Message(json.getBytes(StandardCharsets.UTF_8), new MessageProperties());
+
+        when(deviceRepository.findByDeviceId("D3")).thenReturn(Optional.empty());
+        when(deviceRepository.save(any(Device.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(dataRecordRepository.save(any(DataRecord.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.onUplink(msg);
+
+        verify(dataRecordRepository).save(ArgumentMatchers.argThat(
+                r -> "GATEWAY_REBOOT".equals(r.getProtocolName())
+                        && "OK".equals(r.getDecodeStatus())
+                        && "downlink".equals(r.getTransactionType())
+                        && r.getServiceDataDecoded() != null
+                        && Integer.valueOf(1).equals(r.getServiceDataDecoded().get("appType"))
+                        && Integer.valueOf(2).equals(r.getServiceDataDecoded().get("action"))
+                        && "AQI=".equals(r.getServiceData())));
     }
 
     @Test(expected = RuntimeException.class)
