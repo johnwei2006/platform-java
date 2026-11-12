@@ -34,6 +34,22 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+        <!-- 设备实时状态缓存：Spring Boot 2.1.6 BOM 管理 Lettuce 版本，兼容 Java 8 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+        <!-- 仅使用 JdbcTemplate API，不引入 starter-jdbc（避免 Hikari/自动配置与 MongoDB 冲突） -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-jdbc</artifactId>
+        </dependency>
+        <!-- TDengine 原生 JDBC 驱动；版本与服务端大版本对齐，兼容 Java 8 -->
+        <dependency>
+            <groupId>com.taosdata.jdbc</groupId>
+            <artifactId>taos-jdbcdriver</artifactId>
+            <version>3.2.11</version>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

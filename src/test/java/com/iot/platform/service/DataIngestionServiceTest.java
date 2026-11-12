@@ -8,6 +8,8 @@ import com.iot.platform.model.Device;
 import com.iot.platform.repository.AlarmRepository;
 import com.iot.platform.repository.DataRecordRepository;
 import com.iot.platform.repository.DeviceRepository;
+import com.iot.platform.realtime.DeviceRealtimeStatusService;
+import com.iot.platform.service.converter.UplinkBusinessDispatcher;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.ArgumentMatchers;
@@ -38,6 +40,10 @@ public class DataIngestionServiceTest {
     private DeviceRepository deviceRepository;
     @Mock
     private AlarmRepository alarmRepository;
+    @Mock
+    private UplinkBusinessDispatcher uplinkBusinessDispatcher;
+    @Mock
+    private DeviceRealtimeStatusService realtimeStatusService;
 
     @InjectMocks
     private DataIngestionService service;
@@ -110,6 +116,86 @@ public class DataIngestionServiceTest {
                         && Integer.valueOf(1).equals(r.getServiceDataDecoded().get("appType"))
                         && Integer.valueOf(2).equals(r.getServiceDataDecoded().get("action"))
                         && "AQI=".equals(r.getServiceData())));
+    }
+
+    @Test
+    public void dispatchesBusinessConversionAfterPersisting() throws Exception {
+        UplinkMessage up = new UplinkMessage();
+        up.setDeviceId("D4");
+        up.setServiceType(24);
+        up.setServiceVersion(1);
+        up.setServiceData("AQ==");
+        up.setEventId(400);
+        byte[] body = objectMapper.writeValueAsBytes(up);
+        Message msg = new Message(body, new MessageProperties());
+
+        when(deviceRepository.findByDeviceId("D4")).thenReturn(Optional.empty());
+        when(deviceRepository.save(any(Device.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(dataRecordRepository.save(any(DataRecord.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.onUplink(msg);
+
+        verify(uplinkBusinessDispatcher).dispatch(ArgumentMatchers.argThat(
+                (UplinkMessage m) -> "D4".equals(m.getDeviceId()) && m.getServiceType() == 24));
+    }
+
+    @Test
+    public void dispatchFailureDoesNotBreakUplinkAck() throws Exception {
+        UplinkMessage up = new UplinkMessage();
+        up.setDeviceId("D5");
+        up.setServiceType(24);
+        up.setEventId(500);
+        byte[] body = objectMapper.writeValueAsBytes(up);
+        Message msg = new Message(body, new MessageProperties());
+
+        when(deviceRepository.findByDeviceId("D5")).thenReturn(Optional.empty());
+        when(deviceRepository.save(any(Device.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(dataRecordRepository.save(any(DataRecord.class))).thenAnswer(inv -> inv.getArgument(0));
+        org.mockito.Mockito.doThrow(new RuntimeException("writer down"))
+                .when(uplinkBusinessDispatcher).dispatch(any(UplinkMessage.class));
+
+        service.onUplink(msg);
+
+        verify(dataRecordRepository).save(any(DataRecord.class));
+        verify(deviceRepository).save(any(Device.class));
+    }
+
+    @Test
+    public void refreshesRealtimeStatusAfterPersisting() throws Exception {
+        UplinkMessage up = new UplinkMessage();
+        up.setDeviceId("D6");
+        up.setServiceType(1);
+        up.setEventId(600);
+        Message msg = new Message(objectMapper.writeValueAsBytes(up), new MessageProperties());
+
+        when(deviceRepository.findByDeviceId("D6")).thenReturn(Optional.empty());
+        when(deviceRepository.save(any(Device.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(dataRecordRepository.save(any(DataRecord.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.onUplink(msg);
+
+        verify(realtimeStatusService).refresh(ArgumentMatchers.argThat(
+                (UplinkMessage m) -> "D6".equals(m.getDeviceId()) && m.getServiceType() == 1));
+    }
+
+    @Test
+    public void realtimeFailureDoesNotBreakUplinkAck() throws Exception {
+        UplinkMessage up = new UplinkMessage();
+        up.setDeviceId("D7");
+        up.setServiceType(1);
+        up.setEventId(700);
+        Message msg = new Message(objectMapper.writeValueAsBytes(up), new MessageProperties());
+
+        when(deviceRepository.findByDeviceId("D7")).thenReturn(Optional.empty());
+        when(deviceRepository.save(any(Device.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(dataRecordRepository.save(any(DataRecord.class))).thenAnswer(inv -> inv.getArgument(0));
+        org.mockito.Mockito.doThrow(new RuntimeException("redis down"))
+                .when(realtimeStatusService).refresh(any(UplinkMessage.class));
+
+        service.onUplink(msg);
+
+        verify(dataRecordRepository).save(any(DataRecord.class));
+        verify(deviceRepository).save(any(Device.class));
     }
 
     @Test(expected = RuntimeException.class)

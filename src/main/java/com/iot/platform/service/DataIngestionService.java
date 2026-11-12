@@ -8,6 +8,8 @@ import com.iot.platform.mq.UplinkMessage;
 import com.iot.platform.repository.AlarmRepository;
 import com.iot.platform.repository.DataRecordRepository;
 import com.iot.platform.repository.DeviceRepository;
+import com.iot.platform.realtime.DeviceRealtimeStatusService;
+import com.iot.platform.service.converter.UplinkBusinessDispatcher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.core.Message;
@@ -35,6 +37,10 @@ public class DataIngestionService {
     private DeviceRepository deviceRepository;
     @Autowired
     private AlarmRepository alarmRepository;
+    @Autowired(required = false)
+    private UplinkBusinessDispatcher uplinkBusinessDispatcher;
+    @Autowired(required = false)
+    private DeviceRealtimeStatusService realtimeStatusService;
 
     @RabbitListener(queues = "${app.mq.platform-uplink}")
     public void onUplink(Message message) {
@@ -83,6 +89,26 @@ public class DataIngestionService {
                     up.getProtocolName() == null ? "-" : up.getProtocolName(),
                     up.getDecodeStatus() == null ? "-" : up.getDecodeStatus(),
                     up.getTransactionType() == null ? "-" : up.getTransactionType());
+
+            // 业务转换旁路（传感器时序归档等）：内部隔离异常，绝不改变上行 ACK 语义。
+            try {
+                if (uplinkBusinessDispatcher != null) {
+                    uplinkBusinessDispatcher.dispatch(up);
+                }
+            } catch (Exception e) {
+                log.warn("uplink business dispatch failed: deviceId={} serviceType={} reason={}",
+                        up.getDeviceId(), up.getServiceType(), e.getMessage());
+            }
+
+            // 实时状态旁路（Redis 在线快照 + 最新业务数据）：与业务转换互不依赖，独立隔离异常。
+            try {
+                if (realtimeStatusService != null) {
+                    realtimeStatusService.refresh(up);
+                }
+            } catch (Exception e) {
+                log.warn("realtime status refresh failed: deviceId={} serviceType={} reason={}",
+                        up.getDeviceId(), up.getServiceType(), e.getMessage());
+            }
         } catch (Exception e) {
             log.error("failed to ingest uplink", e);
             throw new RuntimeException(e); // 触发重试 / 死信

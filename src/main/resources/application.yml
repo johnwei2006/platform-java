@@ -4,6 +4,12 @@ server:
 spring:
   application:
     name: platform-java
+  # platform_java 以 MongoDB 为主库；TDengine 的 DataSource/JdbcTemplate 由 TdEngineConfig 手工创建，
+  # 关闭 JDBC 自动配置，避免 classpath 上出现 spring-jdbc 后触发内嵌数据源探测。
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.jdbc.JdbcTemplateAutoConfiguration
   data:
     mongodb:
       uri: ${MONGO_URI:mongodb://localhost:27017/iot_platform}
@@ -22,6 +28,13 @@ spring:
           multiplier: 2.0
           max-interval: 10000
         default-requeue-rejected: false
+  # 设备实时状态缓存。Lettuce 为懒连接，未部署 Redis 时应用仍可启动。
+  redis:
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD:}
+    database: ${REDIS_DATABASE:0}
+    timeout: ${REDIS_TIMEOUT:2000}
 
 app:
   jwt:
@@ -31,6 +44,32 @@ app:
     exchange: iot.exchange
     platform-uplink: platform.uplink
     platform-downlink: platform.downlink
+
+# 传感器时序数据（TDengine）。连接参数只从环境变量注入；口令不写日志。
+# 默认 enabled=true 但采用懒连接：无时序库时应用仍可启动，写入失败只告警不影响上行 ACK。
+tdengine:
+  enabled: ${TDENGINE_ENABLED:true}
+  host: ${TDENGINE_HOST:localhost}
+  port: ${TDENGINE_PORT:6030}
+  username: ${TDENGINE_USER:root}
+  password: ${TDENGINE_PASSWORD:taosdata}
+  database: ${TDENGINE_DATABASE:iot}
+  stable: sensordata
+  # 传感器类型码 -> 单位；未配置的类型使用空串
+  unit-by-sensor-type:
+    "1": "C"
+    "2": "%"
+    "3": "hPa"
+
+# 设备实时状态（Redis String JSON + TTL）。TTL 过期即视为 OFFLINE，不做定时离线扫描。
+# 默认 enabled=true 但写入失败只告警，不影响上行 ACK；口令不写日志。
+realtime:
+  enabled: ${REDIS_ENABLED:true}
+  ttl-seconds: ${REDIS_TTL_SECONDS:120}
+  key-prefix: ${REDIS_KEY_PREFIX:device:status:}
+  max-json-bytes: ${REDIS_MAX_JSON_BYTES:8192}
+  scan-count: ${REDIS_SCAN_COUNT:200}
+  max-list-size: ${REDIS_MAX_LIST_SIZE:1000}
 
 logging:
   level:
